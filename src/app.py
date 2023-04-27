@@ -2,7 +2,7 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 import os
-from flask import Flask, request, jsonify, url_for
+from flask import Flask, request, jsonify, url_for, redirect
 from flask_migrate import Migrate
 from flask_swagger import swagger
 from flask_cors import CORS
@@ -68,7 +68,7 @@ def login():
         if(user.password != body['password']):
             return "la contraseña está mala"    #en la realidad, se pone el usuario o la contraseña son incorrectos; no hay que indicar dónde está el error
         else:   #usuario y contraseña ok, ahora creo el token
-            expiration = datetime.timedelta(minutes=1) #tiempo que le doy al token par que sea válido
+            expiration = datetime.timedelta(minutes=60) #tiempo que le doy al token par que sea válido
             token = create_access_token(identity=user.serialize(), expires_delta=expiration)
             return jsonify({
                 "mensaje": "bienvenido!",
@@ -83,6 +83,44 @@ def check_user():
         "logeado": True
     })
 #en Postman, se pone GET>Auth>Type Bearer Token; 3 respuestas: token OK, token expired, algún error en el token.
+
+@app.route('/signup', methods=['POST'])
+def signup():
+    body = request.get_json()
+    email = body.get('email')
+    password = body.get('password')
+
+    #para verificar si el email ya está registrado:
+    if User.query.filter_by(email=email).first() is not None:
+        return jsonify({
+            "mensaje": "El email ingresado ya se encuentra registrado"
+        }), 400
+    
+    #para crear el nuevo usuario:
+    user = User(email=email, password=password, is_active=True)
+    db.session.add(user)
+    db.session.commit()
+
+    return jsonify({
+        "mensaje": "usuario creado"
+    })
+    #para redireccionar al usuario a la página de inicio de sesión
+    #return redirect('/login')
+
+@app.route('/private', methods=['GET'])
+@jwt_required()
+def private_page():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    if user is None or not user.is_active:
+        return jsonify({
+            "mensaje": "Debes iniciar sesión"
+        })
+    return jsonify({
+        "mensaje": "sí tienes permiso para ver esta página"
+    })
+
+
 # this only runs if `$ python src/app.py` is executed
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 3000))
